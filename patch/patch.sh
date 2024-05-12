@@ -3,7 +3,7 @@
 # Shell authon: xiaoleGun <1592501605@qq.com>
 #               bdqllW <bdqllT@gmail.com>
 # Tested kernel versions: 5.4, 4.19, 4.14, 4.9
-# 20240123
+# 20240321
 
 patch_files=(
     fs/exec.c
@@ -12,6 +12,7 @@ patch_files=(
     fs/stat.c
     drivers/input/input.c
     fs/devpts/inode.c
+    fs/namespace.c
 )
 
 for i in "${patch_files[@]}"; do
@@ -66,6 +67,46 @@ for i in "${patch_files[@]}"; do
         fi
         ;;
 
+    ## namespace.c
+    fs/namespace.c)
+        sed -i '/int ksys_umount(char __user \*name, int flags)/i \
+#ifdef CONFIG_KSU\
+static int can_umount(const struct path *path, int flags)\
+{\
+    struct mount *mnt = real_mount(path->mnt);\
+\
+    if (!may_mount())\
+        return -EPERM;\
+    if (path->dentry != path->mnt->mnt_root)\
+        return -EINVAL;\
+    if (!check_mnt(mnt))\
+        return -EINVAL;\
+    if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */\
+        return -EINVAL;\
+    if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\
+        return -EPERM;\
+    return 0;\
+}\
+\
+// caller is responsible for flags being sane\
+int path_umount(struct path *path, int flags)\
+{\
+    struct mount *mnt = real_mount(path->mnt);\
+    int ret;\
+\
+    ret = can_umount(path, flags);\
+    if (!ret)\
+        ret = do_umount(mnt, flags);\
+\
+    /* we must not call path_put() as that would clear mnt_expiry_mark */\
+    dput(path->dentry);\
+    mntput_no_expire(mnt);\
+    return ret;\
+}\
+#endif\
+' fs/namespace.c
+        ;;
+
     # drivers/input changes
     ## input.c
     drivers/input/input.c)
@@ -73,7 +114,7 @@ for i in "${patch_files[@]}"; do
         sed -i '/int disposition = input_get_disposition(dev, type, code, &value);/a\	#ifdef CONFIG_KSU\n	if (unlikely(ksu_input_hook))\n		ksu_handle_input_handle_event(&type, &code, &value);\n	#endif' drivers/input/input.c
         ;;
 
-     # inode.c changes
+    # inode.c changes
     ## fs/devpts/inode.c
     fs/devpts/inode.c)
         sed -i '/void \*devpts_get_priv(struct dentry \*dentry)/i\extern int ksu_handle_devpts(struct inode*);\n' fs/devpts/inode.c
