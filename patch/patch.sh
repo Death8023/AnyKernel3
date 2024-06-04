@@ -117,8 +117,8 @@ int path_umount(struct path *path, int flags)\
     # inode.c changes
     ## fs/devpts/inode.c
     fs/devpts/inode.c)
-        sed -i '/void \*devpts_get_priv(struct dentry \*dentry)/i\extern int ksu_handle_devpts(struct inode*);\n' fs/devpts/inode.c
-        sed -i '/if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)/i\        ksu_handle_devpts(dentry->d_inode);\n' fs/devpts/inode.c
+        sed -i '/void \*devpts_get_priv(struct dentry \*dentry)/i\#ifdef CONFIG_KSU\n extern int ksu_handle_devpts(struct inode*);\n#endif\n' fs/devpts/inode.c
+        sed -i '/if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)/i\        #ifdef CONFIG_KSU\n        ksu_handle_devpts(dentry->d_inode);\n        #endif' fs/devpts/inode.c
        
     esac
 
